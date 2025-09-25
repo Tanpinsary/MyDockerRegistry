@@ -6,17 +6,17 @@ import (
 
 type StorageDriver interface {
 	// Manifest API
-	GetManifest(name, reference string) (*types.ManifestData, error)
-	PutManifest(name, reference string) (string, string, int, error)
-	CheckManifestExists(name, reference string) (int, string, string)
-	DeleteManifest(name, reference string)
+	GetImageManifest(params types.GetManifestParams) (*types.Manifest, error)
+	PutImageManifest(params types.GetManifestParams) (*types.ManifestData, error)
+	CheckImageManifestExists(params types.GetManifestParams) (*types.ManifestData, error)
+	DeleteImageManifest(params types.GetManifestParams)
 
 	// Blob API
-	InitiateBlobUpload(name, mount, from string) (*types.BlobUploadResult, error)
-	BlobExists(repository, digest string) (*types.BlobDescriptor, error)
-	RetrieveBlob()
-	GetBlobUploadStatus()
-	CompleteBlobUpload()
-	UploadBlobChunk()
-	CancelBlobUpload()
+	InitiateBlobUpload(params types.InitiateBlobUploadParams) (*types.InitiateBlobUploadResponse, error)
+	BlobExists(params types.GetBlobParams) (*types.BlobStatus, error)
+	RetrieveBlob(params types.GetBlobParams) (*types.BlobStatus, error)
+	GetBlobUploadStatus(params types.GetBlobParams) (*types.BlobUploadStatus, error)
+	CompleteBlobUpload(params types.GetBlobParams) (*types.CompleteBlobUploadResponse, error)
+	UploadBlobChunk(params types.GetBlobParams) (*types.UploadBlobChunkResponse, error)
+	CancelBlobUpload(params types.GetBlobParams) (int, error)
 }

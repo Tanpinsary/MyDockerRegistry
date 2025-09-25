@@ -6,27 +6,27 @@ const (
 	ManifestListV2MediaType = "application/vnd.docker.distribution.manifest.list.v2+json"
 )
 
-// ManifestV2
+// 查询 Manifest 通过 name 和 reference
+type GetManifestParams struct {
+	RepositoryName string
+	Reference      string
+}
 
-type ManifestV2 struct {
+// Manifest 代表一个 Docker 镜像清单 (v2)。
+// 这是与 Registry API 交互时的核心数据结构。
+type Manifest struct {
 	SchemaVersion int              `json:"schemaVersion"`
 	MediaType     string           `json:"mediaType"`
 	Config        BlobDescriptor   `json:"config"`
 	Layers        []BlobDescriptor `json:"layers"`
 }
 
-// ManifestListV2
-type ManifestListV2 struct {
-	SchemaVersion int                      `json:"schemaversion"`
-	MediaType     string                   `json:"mediaType"`
-	Manifests     []ManifestListDescriptor `json:"manifests"`
-}
-
+// ManifestLDescriptor 描述了一个可通过内容寻址的组件（如 config 或 layer）。
+// 它包含了媒体类型、大小和内容的摘要 (digest)。
 type ManifestListDescriptor struct {
-	MediaType string   `json:"mediaType"`
-	Size      int64    `json:"size"`
-	Digest    string   `json:"digest"`
-	Platform  Platform `json:"platform"`
+	MediaType string `json:"mediaType"`
+	Size      int64  `json:"size"`
+	Digest    string `json:"digest"`
 }
 
 type Platform struct {
@@ -34,10 +34,9 @@ type Platform struct {
 	OS           string `json:"os"`
 }
 
-// 返回对象打包
-
+// 接受 PutImageManifest 和 CheckImageManifest 返回参数
 type ManifestData struct {
-	Digest    string
-	MediaType string
-	Schema    []byte
+	Digest         string
+	Location       string
+	Content_Length int //always 0
 }
