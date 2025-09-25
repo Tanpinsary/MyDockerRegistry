@@ -10,9 +10,9 @@ type GetBlobParams struct {
 
 // BlobExists 和 RetrieveBlob 返回参数
 type BlobStatus struct {
-	Content_Length int
-	Digest         string
-	Content_Type   string
+	ContentLength int
+	Digest        string
+	ContentType   string
 }
 
 // GetBlobUploadStatus 返回参数
@@ -24,9 +24,9 @@ type BlobUploadStatus struct {
 
 // CompleteBlobUpload 返回参数
 type CompleteBlobUploadResponse struct {
-	Digest         string
-	Location       string
-	Content_Length int
+	Digest        string
+	Location      string
+	ContentLength int
 }
 
 // InitiateBlobUpload 接受参数
@@ -64,15 +64,15 @@ type InitiateBlobUploadResponse struct {
 
 // when 201
 type BlobUploadMountedStatus struct {
-	Location       string
-	Digest         string
-	Content_Length int
+	Location      string
+	Digest        string
+	ContentLength int
 }
 
 // when 202
 type BlobUploadInitiatedStatus struct {
-	Range   string
-	UUID    string
-	Locaton string
-	Digest  string
+	Range    string
+	UUID     string
+	Location string
+	Digest   string
 }

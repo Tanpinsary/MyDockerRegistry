@@ -36,7 +36,7 @@ type Platform struct {
 
 // 接受 PutImageManifest 和 CheckImageManifest 返回参数
 type ManifestData struct {
-	Digest         string
-	Location       string
-	Content_Length int //always 0
+	Digest        string
+	Location      string
+	ContentLength int //always 0
 }

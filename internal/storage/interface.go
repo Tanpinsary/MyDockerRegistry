@@ -6,10 +6,10 @@ import (
 
 type StorageDriver interface {
 	// Manifest API
-	GetImageManifest(params types.GetManifestParams) (*types.Manifest, error)
-	PutImageManifest(params types.GetManifestParams) (*types.ManifestData, error)
-	CheckImageManifestExists(params types.GetManifestParams) (*types.ManifestData, error)
-	DeleteImageManifest(params types.GetManifestParams)
+	GetManifest(params types.GetManifestParams) (*types.Manifest, error)
+	PutManifest(params types.GetManifestParams) (*types.ManifestData, error)
+	ManifestExists(params types.GetManifestParams) (*types.ManifestData, error)
+	DeleteManifest(params types.GetManifestParams)
 
 	// Blob API
 	InitiateBlobUpload(params types.InitiateBlobUploadParams) (*types.InitiateBlobUploadResponse, error)
