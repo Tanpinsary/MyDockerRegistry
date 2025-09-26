@@ -21,6 +21,14 @@ type Manifest struct {
 	Layers        []BlobDescriptor `json:"layers"`
 }
 
+// PutManifestParams 封装了 PutManifest 方法所需的所有参数。
+type PutManifestParams struct {
+	RepositoryName string
+	Reference      string
+	MediaType      string
+	Content        []byte
+}
+
 // ManifestLDescriptor 描述了一个可通过内容寻址的组件（如 config 或 layer）。
 // 它包含了媒体类型、大小和内容的摘要 (digest)。
 type ManifestListDescriptor struct {

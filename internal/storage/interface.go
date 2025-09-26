@@ -7,7 +7,7 @@ import (
 type StorageDriver interface {
 	// Manifest API
 	GetManifest(params types.GetManifestParams) (*types.Manifest, error)
-	PutManifest(params types.GetManifestParams) (*types.ManifestData, error)
+	PutManifest(params types.PutManifestParams) (*types.ManifestData, error)
 	ManifestExists(params types.GetManifestParams) (*types.ManifestData, error)
 	DeleteManifest(params types.GetManifestParams)
 
