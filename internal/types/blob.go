@@ -36,6 +36,15 @@ type InitiateBlobUploadParams struct {
 	From           string
 }
 
+// UploadBlobChunk 接受参数
+type UploadBlobChunkParams struct {
+	RepositoryName string
+	UUID           string
+	Content        []byte // 来自请求体
+	RangeFrom      int64  // 从 Content-Range 解析出的起始字节
+	RangeTo        int64  // 从 Content-Range 解析出的结束字节
+}
+
 // UploadBlobChunk 返回参数
 type UploadBlobChunkResponse struct {
 	Location string
@@ -69,10 +78,18 @@ type BlobUploadMountedStatus struct {
 	ContentLength int
 }
 
+func (s *BlobUploadMountedStatus) GetStatusCode() int {
+	return 201 // 201 Created
+}
+
 // when 202
 type BlobUploadInitiatedStatus struct {
 	Range    string
 	UUID     string
 	Location string
 	Digest   string
+}
+
+func (s *BlobUploadInitiatedStatus) GetStatusCode() int {
+	return 202 // 202 Accepted
 }

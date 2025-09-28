@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // fileSystemDriver 实现了 StorageDriver 接口，使用本地文件系统作为后端。
@@ -65,6 +67,31 @@ func (d *fileSystemDriver) resolveReference(repoName, reference string) (string,
 // calculateDigest 计算数据的 sha256 摘要。
 func calculateDigest(content []byte) string {
 	return fmt.Sprintf("sha256:%x", sha256.Sum256(content))
+}
+
+// blobDataPath 根据摘要构建 blob 数据文件的路径。
+// 路径格式: <root>/blobs/sha256/<前两位哈希>/<完整哈希>
+func (d *fileSystemDriver) blobDataPath(digest string) (string, error) {
+	parts := strings.Split(digest, ":")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid digest format: %s", digest)
+	}
+	alg, hex := parts[0], parts[1]
+	if len(hex) < 2 {
+		return "", fmt.Errorf("invalid digest hex for path creation: %s", hex)
+	}
+	// 我们只支持 sha256
+	if alg != "sha256" {
+		return "", fmt.Errorf("unsupported digest algorithm: %s", alg)
+	}
+
+	return filepath.Join(d.rootDirectory, "blobs", alg, hex[:2], hex), nil
+}
+
+// blobUploadPath 根据上传 ID 构建临时上传目录的路径。
+// 路径格式: <root>/repositories/<name>/_uploads/<uuid>
+func (d *fileSystemDriver) blobUploadPath(repoName, uuid string) string {
+	return filepath.Join(d.rootDirectory, "repositories", repoName, "_uploads", uuid)
 }
 
 // --- Manifest API ---
@@ -155,7 +182,7 @@ func (d *fileSystemDriver) ManifestExists(params types.GetManifestParams) (*type
 	// 1. 解析引用，获取 digest
 	digest, err := d.resolveReference(params.RepositoryName, params.Reference)
 	if err != nil {
-		return nil, err // 错误已在 resolveReference 中创建
+		return nil, err
 	}
 
 	// 2. 获取 manifest 内容文件的路径
@@ -182,36 +209,301 @@ func (d *fileSystemDriver) ManifestExists(params types.GetManifestParams) (*type
 	return manifestData, nil
 }
 
-func (d *fileSystemDriver) DeleteManifest(params types.GetManifestParams) {
-	panic("not implemented")
+func (d *fileSystemDriver) DeleteManifest(params types.GetManifestParams) error {
+
+	digest, err := d.resolveReference(params.RepositoryName, params.Reference)
+	if err != nil {
+		return err
+	}
+
+	manifestPath := d.manifestPath(params.RepositoryName, digest)
+	// 根据 digest 移除文件
+	err = os.Remove(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return types.NewError(types.ErrorCodeManifestUnknown, "manifest unknown", map[string]string{"digest": digest})
+		}
+		return err
+	}
+
+	// 如果原始引用是 tag，则删除 tag 链接文件
+	if !strings.HasPrefix(params.Reference, "sha256:") {
+		tagPath := d.tagPath(params.RepositoryName, params.Reference)
+		err = os.Remove(tagPath)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // --- Blob API ---
 
 func (d *fileSystemDriver) InitiateBlobUpload(params types.InitiateBlobUploadParams) (*types.InitiateBlobUploadResponse, error) {
-	panic("not implemented")
+	// 检查是否是跨仓库挂载请求
+	if params.Mount != "" && params.From != "" {
+		// 检查源 blob 是否存在
+		blobParams := types.GetBlobParams{RepositoryName: params.From, Digest: params.Mount}
+		status, err := d.BlobExists(blobParams)
+		if err != nil {
+			// 如果源 blob 不存在，则退回到普通上传流程
+			return d.initiateRegularUpload(params.RepositoryName)
+		}
+
+		// 源 blob 存在，创建 201 Mounted 状态
+		mountedStatus := &types.BlobUploadMountedStatus{
+			Location:      fmt.Sprintf("/v2/%s/blobs/%s", params.RepositoryName, status.Digest),
+			ContentLength: status.ContentLength,
+			Digest:        status.Digest,
+		}
+		return &types.InitiateBlobUploadResponse{
+			Status:        mountedStatus,
+			MountedStatus: mountedStatus,
+		}, nil
+	}
+
+	// 普通上传流程
+	return d.initiateRegularUpload(params.RepositoryName)
+}
+
+// initiateRegularUpload 处理标准的 blob 上传初始化
+func (d *fileSystemDriver) initiateRegularUpload(repoName string) (*types.InitiateBlobUploadResponse, error) {
+	// 1. 生成一个新的 UUID 作为上传会话 ID
+	u, err := uuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+	uuidStr := u.String()
+
+	// 2. 创建临时上传目录
+	uploadPath := d.blobUploadPath(repoName, uuidStr)
+	if err := os.MkdirAll(uploadPath, 0755); err != nil {
+		return nil, err
+	}
+
+	// 3. 创建 202 Accepted 状态
+	initiatedStatus := &types.BlobUploadInitiatedStatus{
+		Location: fmt.Sprintf("/v2/%s/blobs/uploads/%s", repoName, uuidStr),
+		UUID:     uuidStr,
+		Range:    "0-0", // 初始范围
+	}
+	return &types.InitiateBlobUploadResponse{
+		Status:          initiatedStatus,
+		InitiatedStatus: initiatedStatus,
+	}, nil
 }
 
 func (d *fileSystemDriver) BlobExists(params types.GetBlobParams) (*types.BlobStatus, error) {
-	panic("not implemented")
+	// 1. 获取 blob 文件的标准路径
+	path, err := d.blobDataPath(params.Digest)
+	if err != nil {
+		return nil, types.NewError(types.ErrorCodeDigestInvalid, "invalid digest", err.Error())
+	}
+
+	// 2. 使用 os.Stat 检查文件是否存在并获取信息
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// 文件不存在，返回标准的 blob unknown 错误
+			return nil, types.NewError(types.ErrorCodeBlobUnknown, "blob unknown", map[string]string{"digest": params.Digest})
+		}
+		// 其他文件系统错误
+		return nil, err
+	}
+
+	// 3. 构建并返回 BlobStatus
+	status := &types.BlobStatus{
+		Digest:        params.Digest,
+		ContentLength: int(info.Size()),
+	}
+
+	return status, nil
 }
 
 func (d *fileSystemDriver) RetrieveBlob(params types.GetBlobParams) (*types.BlobStatus, error) {
-	panic("not implemented")
+	// 1. 获取 blob 文件的标准路径
+	path, err := d.blobDataPath(params.Digest)
+	if err != nil {
+		return nil, types.NewError(types.ErrorCodeDigestInvalid, "invalid digest", err.Error())
+	}
+
+	// 2. 使用 os.Stat 检查文件是否存在并获取信息
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// 文件不存在，返回标准的 blob unknown 错误
+			return nil, types.NewError(types.ErrorCodeBlobUnknown, "blob unknown", map[string]string{"digest": params.Digest})
+		}
+		// 其他文件系统错误
+		return nil, err
+	}
+
+	// 3. 构建并返回 BlobStatus
+	status := &types.BlobStatus{
+		Digest:        params.Digest,
+		ContentLength: int(info.Size()),
+		ContentType:   "application/octet-stream", // Blob 的标准 Content-Type
+	}
+
+	return status, nil
 }
 
 func (d *fileSystemDriver) GetBlobUploadStatus(params types.GetBlobParams) (*types.BlobUploadStatus, error) {
-	panic("not implemented")
+	// 1. 获取临时上传目录的路径
+	uploadPath := d.blobUploadPath(params.RepositoryName, params.UUID)
+
+	// 2. 检查上传会话是否存在（即目录是否存在）
+	dirInfo, err := os.Stat(uploadPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, types.NewError(types.ErrorCodeBlobUploadUnknown, "blob upload unknown", map[string]string{"uuid": params.UUID})
+		}
+		return nil, err
+	}
+	if !dirInfo.IsDir() {
+		return nil, types.NewError(types.ErrorCodeBlobUploadUnknown, "blob upload unknown", map[string]string{"uuid": params.UUID})
+	}
+
+	// 3. 检查临时数据文件的大小以确定当前偏移量
+	dataPath := filepath.Join(uploadPath, "data")
+	fileInfo, err := os.Stat(dataPath)
+	var offset int64
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err // 其他文件系统错误
+		}
+		// 文件不存在是正常情况，意味着上传刚开始，偏移量为 0
+		offset = 0
+	} else {
+		offset = fileInfo.Size()
+	}
+
+	// 4. 构建并返回状态
+	rangeStr := "0-0"
+	if offset > 0 {
+		rangeStr = fmt.Sprintf("0-%d", offset-1)
+	}
+	status := &types.BlobUploadStatus{
+		UUID:     params.UUID,
+		Location: fmt.Sprintf("/v2/%s/blobs/uploads/%s", params.RepositoryName, params.UUID),
+		Range:    rangeStr,
+	}
+
+	return status, nil
 }
 
 func (d *fileSystemDriver) CompleteBlobUpload(params types.GetBlobParams) (*types.CompleteBlobUploadResponse, error) {
-	panic("not implemented")
+	// 1. 获取临时上传目录的路径
+	uploadPath := d.blobUploadPath(params.RepositoryName, params.UUID)
+	dataPath := filepath.Join(uploadPath, "data")
+
+	// 2. 检查上传会话是否存在
+	if _, err := os.Stat(dataPath); os.IsNotExist(err) {
+		return nil, types.NewError(types.ErrorCodeBlobUploadUnknown, "blob upload unknown", map[string]string{"uuid": params.UUID})
+	}
+
+	// 3. 读取临时文件内容并计算摘要
+	content, err := os.ReadFile(dataPath)
+	if err != nil {
+		return nil, err
+	}
+	calculatedDigest := calculateDigest(content)
+
+	// 4. 校验摘要
+	if params.Digest != calculatedDigest {
+		return nil, types.NewError(types.ErrorCodeDigestInvalid, "digest mismatch", fmt.Sprintf("provided %s, calculated %s", params.Digest, calculatedDigest))
+	}
+
+	// 5. 获取最终存储路径
+	finalPath, err := d.blobDataPath(params.Digest)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. 创建最终目录并移动文件
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(dataPath, finalPath); err != nil {
+		return nil, err
+	}
+
+	// 7. 清理临时上传目录
+	if err := os.RemoveAll(uploadPath); err != nil {
+		// 注意：即使清理失败，上传也已成功，这里可以只记录日志而不返回错误
+	}
+
+	// 8. 构建并返回成功响应
+	response := &types.CompleteBlobUploadResponse{
+		Digest:        params.Digest,
+		Location:      fmt.Sprintf("/v2/%s/blobs/%s", params.RepositoryName, params.Digest),
+		ContentLength: len(content),
+	}
+
+	return response, nil
 }
 
-func (d *fileSystemDriver) UploadBlobChunk(params types.GetBlobParams) (*types.UploadBlobChunkResponse, error) {
-	panic("not implemented")
+func (d *fileSystemDriver) UploadBlobChunk(params types.UploadBlobChunkParams) (*types.UploadBlobChunkResponse, error) {
+	// 1. 获取临时上传目录的路径
+	uploadPath := d.blobUploadPath(params.RepositoryName, params.UUID)
+
+	// 2. 检查上传会话是否存在
+	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
+		return nil, types.NewError(types.ErrorCodeBlobUploadUnknown, "blob upload unknown", map[string]string{"uuid": params.UUID})
+	}
+
+	// 3. 获取当前文件大小以校验 Range
+	dataPath := filepath.Join(uploadPath, "data")
+	var currentSize int64
+	if info, err := os.Stat(dataPath); err == nil {
+		currentSize = info.Size()
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	// 4. 校验 Range
+	if params.RangeFrom != currentSize {
+		return nil, types.NewError(types.ErrorCodeRangeInvalid, "invalid range", fmt.Sprintf("expected range start %d, got %d", currentSize, params.RangeFrom))
+	}
+
+	// 5. 打开文件并追加数据
+	file, err := os.OpenFile(dataPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	bytesWritten, err := file.Write(params.Content)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. 构建并返回响应
+	newOffset := currentSize + int64(bytesWritten)
+	response := &types.UploadBlobChunkResponse{
+		Location: fmt.Sprintf("/v2/%s/blobs/uploads/%s", params.RepositoryName, params.UUID),
+		Range:    fmt.Sprintf("%d-%d", currentSize, newOffset-1),
+		UUID:     params.UUID,
+	}
+
+	return response, nil
 }
 
 func (d *fileSystemDriver) CancelBlobUpload(params types.GetBlobParams) (int, error) {
-	panic("not implemented")
+	// 1. 获取临时上传目录的路径
+	uploadPath := d.blobUploadPath(params.RepositoryName, params.UUID)
+
+	// 2. 检查上传会话是否存在
+	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
+		return 0, types.NewError(types.ErrorCodeBlobUploadUnknown, "blob upload unknown", map[string]string{"uuid": params.UUID})
+	}
+
+	// 3. 删除整个临时上传目录
+	err := os.RemoveAll(uploadPath)
+	if err != nil {
+		return 0, err // 如果删除失败，返回一个通用的服务器错误
+	}
+
+	// 4. 成功，返回 204 No Content 状态码
+	return 204, nil
 }

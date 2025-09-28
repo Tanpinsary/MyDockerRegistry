@@ -24,6 +24,7 @@ const (
 	ErrorCodeBlobUploadInvalid ErrorCode = "BLOB_UPLOAD_INVALID"
 	ErrorCodeNameInvalid       ErrorCode = "NAME_INVALID"
 	ErrorCodeUnsupported       ErrorCode = "UNSUPPORTED"
+	ErrorCodeRangeInvalid      ErrorCode = "RANGE_INVALID"
 )
 
 // RegistryError defines the structure for a single error.

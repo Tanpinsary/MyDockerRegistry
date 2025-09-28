@@ -9,7 +9,7 @@ type StorageDriver interface {
 	GetManifest(params types.GetManifestParams) (*types.Manifest, error)
 	PutManifest(params types.PutManifestParams) (*types.ManifestData, error)
 	ManifestExists(params types.GetManifestParams) (*types.ManifestData, error)
-	DeleteManifest(params types.GetManifestParams)
+	DeleteManifest(params types.GetManifestParams) error
 
 	// Blob API
 	InitiateBlobUpload(params types.InitiateBlobUploadParams) (*types.InitiateBlobUploadResponse, error)
@@ -17,6 +17,6 @@ type StorageDriver interface {
 	RetrieveBlob(params types.GetBlobParams) (*types.BlobStatus, error)
 	GetBlobUploadStatus(params types.GetBlobParams) (*types.BlobUploadStatus, error)
 	CompleteBlobUpload(params types.GetBlobParams) (*types.CompleteBlobUploadResponse, error)
-	UploadBlobChunk(params types.GetBlobParams) (*types.UploadBlobChunkResponse, error)
+	UploadBlobChunk(params types.UploadBlobChunkParams) (*types.UploadBlobChunkResponse, error)
 	CancelBlobUpload(params types.GetBlobParams) (int, error)
 }
