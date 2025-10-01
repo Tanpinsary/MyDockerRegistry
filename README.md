@@ -1,388 +1,147 @@
-内容参考网站为 [Docker Registry HTTP API V2 规范](https://docs.docker.com/reference/api/registry/latest/)
-(施工中，太菜了呜呜呜呜)
+# Docker Registry HTTP API V2 Implementation
 
-## 须知：
+BYRTeam 2025 考核题 Docker It Yourself 实现
 
-1. 此 API 中的所有端点均以**版本号**和**存储库名称**作为前缀。
+一个用 Go 语言实现的轻量级 Docker Registry HTTP API V2 服务器，支持完整的 manifest 和 blob 管理功能。
 
-   ```
-   /v2/<name>
-   ```
+## 🚀 功能特性
 
-   例如，我想和 `library/ubuntu` 库进行交互，则使用：
+### 核心 API 支持
+- **Manifest 管理** - 支持获取、上传、检查和删除
+- **Blob 管理** - 支持分片上传、下载和跨仓库挂载
+- **错误处理** - 符合 Docker Registry API 规范的标准错误响应
 
-   ```
-   /v2/library/ubuntu
-   ```
+### 架构特点
+- **分层架构** - Handler → Storage → FileSystem
+- **接口驱动** - 可扩展的存储驱动设计
+- **参数对象模式** - 类型安全的接口设计
+- **完整的错误处理** - 标准化的错误码和响应格式
 
-2. Autunentication 不做要求
+## 支持的 API 端点
 
-## Docker Registry 构成
+### Manifest API
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| `GET` | `/v2/{name}/manifests/{reference}` | 获取 manifest |
+| `PUT` | `/v2/{name}/manifests/{reference}` | 上传 manifest |
+| `HEAD` | `/v2/{name}/manifests/{reference}` | 检查 manifest 是否存在 |
+| `DELETE` | `/v2/{name}/manifests/{reference}` | 删除 manifest |
 
-Registry 一共要维护三类实体的信息：blob, manifest 和 manifest list.
+### Blob API
+| 方法 | 路径 | 描述 |
+|------|------|------|
+| `HEAD` | `/v2/{name}/blobs/{digest}` | 检查 blob 是否存在 |
+| `GET` | `/v2/{name}/blobs/{digest}` | 获取 blob 内容 |
+| `POST` | `/v2/{name}/blobs/uploads/` | 初始化 blob 上传 |
+| `GET` | `/v2/{name}/blobs/uploads/{uuid}` | 获取上传状态 |
+| `PATCH` | `/v2/{name}/blobs/uploads/{uuid}` | 上传 blob 数据块 |
+| `PUT` | `/v2/{name}/blobs/uploads/{uuid}?digest={digest}` | 完成 blob 上传 |
+| `DELETE` | `/v2/{name}/blobs/uploads/{uuid}` | 取消 blob 上传 |
 
-Manifest 是描述镜像的 JSON 文档，包含其配置 blob、各每层 blob 的 digest，以及平台类型和注释等元数据。
+## 项目结构
 
-Blob 是从 Manifest 文件中引用的二进制对象，包含 json config 和若干 tar 包。
-
-Manifest list 是一个 Tag 所对应所有 Manifest 的元数据列表。获取 manifest list 后，通过对应的 digest 值获取 manifest, 再根据 manifest 的内容下载所有 Blob。
-
-## Pulling Images
-
-拉取镜像，也就是检索 Manifest 并下载对应 Image 中的各层 Blob。以下为步骤：
-
-1. 获取仓库 Tokens 鉴权（本次项目不需要实现）
-2. 获取 Image Manifest List
-3. 若前两步获取的是一个多架构的 Manifest List，则需要：
-   1. 解析 Manifests[] 并根据架构定位具体 digest
-   2. 根据 digest 获取 Image Manifest
-4. 下载前确认 Blob 是否存在。客户端应该向每一层发送 **HEAD** 请求
-5. 根据前几步获取的 digest 从 manifest 中获取每一层的 Blob。客户端应发送 **GET** 请求
-
-下面是官网给的 Pulling Images 的脚本示例。示例拉取 linux/amd64 平台上 ubuntu:latest 镜像：
-
-```bash
-#!/bin/bash
-
-# Step 1: Get a bearer token
-TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/ubuntu:pull" | jq -r .token)
-
-# Step 2: Get the image manifest. In this example, an image manifest list is returned.
-curl -s -H "Authorization: Bearer $TOKEN" \
-     -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
-     https://registry-1.docker.io/v2/library/ubuntu/manifests/latest \
-     -o manifest-list.json
-
-# Step 3a: Parse the `manifests[]` array to locate the digest for your target platform (e.g., `linux/amd64`).
-IMAGE_MANIFEST_DIGEST=$(jq -r '.manifests[] | select(.platform.architecture == "amd64" and .platform.os == "linux") | .digest' manifest-list.json)
-
-# Step 3b: Get the platform-specific image manifest
-curl -s -H "Authorization: Bearer $TOKEN" \
-     -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-     https://registry-1.docker.io/v2/library/ubuntu/manifests/$IMAGE_MANIFEST_DIGEST \
-     -o manifest.json
-
-# Step 4: Send a HEAD request to check if the layer blob exists
-DIGEST=$(jq -r '.layers[0].digest' manifest.json)
-curl -I -H "Authorization: Bearer $TOKEN" \
-     https://registry-1.docker.io/v2/library/ubuntu/blobs/$DIGEST
-
-# Step 5: Download the layer blob
-curl -L -H "Authorization: Bearer $TOKEN" \
-     https://registry-1.docker.io/v2/library/ubuntu/blobs/$DIGEST
+```
+my_docker_registry/
+├── cmd/registry/
+│   └── main.go                 # 应用程序入口
+├── internal/
+│   ├── handler/
+│   │   └── handler.go          # HTTP 请求处理层
+│   ├── storage/
+│   │   ├── interface.go        # 存储驱动接口定义
+│   │   └── filesystem.go       # 文件系统存储实现
+│   └── types/
+│       ├── errors.go           # 标准错误定义
+│       ├── blob.go             # Blob 相关数据结构
+│       └── manifest.go         # Manifest 相关数据结构
+├── go.mod
+├── go.sum
+└── registry_data/              # 数据存储目录（运行时创建）
+    ├── blobs/                  # Blob 存储（按摘要组织）
+    │   └── sha256/
+    │       └── {xx}/           # sha256 前两位作为索引
+    │           └── {hash}
+    └── repositories/           # 仓库数据
+        └── {name}/
+            ├── _manifests/
+            │   ├── revisions/sha256/{hash}
+            │   └── tags/{tag}/current/link
+            └── _uploads/{uuid}/
 ```
 
- 
+## 快速开始
 
-## Pushing Images
+### 环境要求
+- Go 1.21
+- 网络端口 5000（可配置）
 
-推送镜像，与拉取相对应的提交镜像的各层 blob（例如 config 和 layers），然后上传引用这些 blob 的 manifest。以下为步骤：
+### 安装和运行
 
-1. 获取仓库 Tokens 鉴权（本次项目不需要实现）
-
-2. 使用 HEAD 请求确保对于每一个 blob digest，对应的 blob 都存在
-
-3. 若不存在，则使用单体 PUT 请求上传 blob
-
-   1. 使用 POST 初始化上传
-   2. 使用 PUT 完成上传
-
-   > [!NOTE]
-   >
-   > 也可以使用分块上传的方式上传一个大型对象或者恢复终端上传。具体操作是使用 PATCH 请求发送每一个数据块，最后用 PUT 请求完成上传。
-
-4. 使用 PUT 请求上传 Image Manifest 以关联 config 和 layers
-
-下面是官网给的 Pushing Images 的脚本示例。示例推送了一个空的 blob 和 manifest 到 Docker Hub 上。
-
+1. **克隆项目**
 ```bash
-#!/bin/bash
+git clone https://github.com/Tanpinsary/my_docker_registry.git
+cd my_docker_registry
+```
 
-USERNAME=yourusername
-PASSWORD=dckr_pat
-REPO=yourusername/helloworld
-TAG=latest
-CONFIG=config.json
-MIME_TYPE=application/vnd.docker.container.image.v1+json
+2. **安装依赖**
+```bash
+go mod download
+```
 
-# Step 1: Get a bearer token
-TOKEN=$(curl -s -u "$USERNAME:$PASSWORD" \
-"https://auth.docker.io/token?service=registry.docker.io&scope=repository:$REPO:push,pull" \
-| jq -r .token)
+3. **编译项目**
+```bash
+go build ./cmd/registry
+```
 
-# Create a dummy config blob and compute its digest
-echo '{"architecture":"amd64","os":"linux","config":{},"rootfs":{"type":"layers","diff_ids":[]}}' > $CONFIG
-DIGEST="sha256:$(sha256sum $CONFIG | awk '{print $1}')"
+4. **运行服务器**
+```bash
+./registry
+```
 
-# Step 2: Check if the blob exists
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" -I \
-  -H "Authorization: Bearer $TOKEN" \
-  https://registry-1.docker.io/v2/$REPO/blobs/$DIGEST)
+服务器将在 `http://localhost:5000` 启动，数据将存储在 `./registry_data` 目录中。
 
-if [ "$STATUS" != "200" ]; then
-  # Step 3: Upload blob using monolithic upload
-  LOCATION=$(curl -sI -X POST \
-    -H "Authorization: Bearer $TOKEN" \
-    https://registry-1.docker.io/v2/$REPO/blobs/uploads/ \
-    | grep -i Location | tr -d '\r' | awk '{print $2}')
+### 错误响应格式
 
-  curl -s -X PUT "$LOCATION&digest=$DIGEST" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Content-Type: application/octet-stream" \
-    --data-binary @$CONFIG
-fi
+所有错误都遵循 Docker Registry API 标准格式：
 
-# Step 4: Upload the manifest that references the config blob
-MANIFEST=$(cat <<EOF
+```json
 {
-  "schemaVersion": 2,
-  "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
-  "config": {
-    "mediaType": "$MIME_TYPE",
-    "size": $(stat -c%s $CONFIG),
-    "digest": "$DIGEST"
-  },
-  "layers": []
+  "errors": [
+    {
+      "code": "BLOB_UNKNOWN",
+      "message": "blob unknown",
+      "detail": {
+        "digest": "sha256:abc123"
+      }
+    }
+  ]
 }
-EOF
-)
-
-curl -s -X PUT \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/vnd.docker.distribution.manifest.v2+json" \
-  -d "$MANIFEST" \
-  https://registry-1.docker.io/v2/$REPO/manifests/$TAG
-
-echo "Pushed image to $REPO:$TAG"
 ```
 
-该样例推送了一个不包含任何 layers 的镜像。如果要推送一个完整的有内容的镜像，需要对每个 layer 重复 2-3 次的推送并且把每个 layer 的 digest 保存在 manifest 的 layers[] 内。
-
-## Deleting Images
-
-删除镜像，包括通过 digest 删除 manifest。想要删除首先得获取 manifest digest，然后再使用 DELETE 请求删除 digest。
-
-并非所有的 manifest 都可以删除。只有没有 tag 标记的 manifest 或者没有被其他 tag 或者 images 引用的 manifest 才能被删除（我猜是避免空指针问题）。如果删除的 manifest 是被引用的，返回 `403 Forbidden`。以下为步骤：
-
-1. 获取仓库 Tokens 鉴权（本项目不需要实现）
-2. 使用 Images Tag 获取 manifest
-3. 从清单响应中获取 Docker-Content-Digest 标头。该摘要可唯一标识该清单
-4. 使用 DELETE 请求，根据 digest 删除 manifest
-
-下面是官网给的 Deleting Images 的脚本示例。示例删除了 Docker Hub 上 yourusername/helloworld 的 latest，不过似乎没有检查是否该 image 被其他 tag 引用。
-
-```bash
-#!/bin/bash
-
-USERNAME=yourusername
-PASSWORD=dckr_pat
-REPO=yourusername/helloworld
-TAG=latest
-
-# Step 1: Get a bearer token
-TOKEN=$(curl -s -u "$USERNAME:$PASSWORD" \
-  "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$REPO:pull,push,delete" \
-  | jq -r .token)
-
-# Step 2 and 3: Get the manifest and extract the digest from response headers
-DIGEST=$(curl -sI -H "Authorization: Bearer $TOKEN" \
-  -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-  https://registry-1.docker.io/v2/$REPO/manifests/$TAG \
-  | grep -i Docker-Content-Digest | tr -d '\r' | awk '{print $2}')
-
-echo "Deleting manifest with digest: $DIGEST"
-
-# Step 4: Delete the manifest by digest
-curl -s -X DELETE \
-  -H "Authorization: Bearer $TOKEN" \
-  https://registry-1.docker.io/v2/$REPO/manifests/$DIGEST
-
-echo "Deleted image: $REPO@$DIGEST"
-```
-
-## API
-
-### Manifest
-
-- GET image manifest
-  由 name 和 reference 获取 manifest，其中 reference 可以是 tag 也可以是 digest
-  获取一个标准的 Manifest 格式
-  
-  ```api
-  GET /V2/{name}/manifests/{reference}
-  ```
-
-  - Request:![](https://pic.arctanp.top/PicGo/10d1d408-3d35-43e7-a855-e65376b84928.png)
-  
-  - Responses:
-    ![image-20250923150437791](C:\Users\tanpi\AppData\Roaming\Typora\typora-user-images\image-20250923150437791.png)
-  
-- PUT image manifest
-  上传指定 tag 或者 digest 的 manifest 到 registry。需要在所有 layer 和 configs 都已经完成上传后再使用。
-  Manifest 的 media type 为 `application/vnd.docker.distribution.manifest.v2+json`
-
-  ```api
-  PUT /v2/{name}/manifests/{reference}
-  ```
-
-  - Request:![](https://pic.arctanp.top/PicGo/20250923153715.png)
-
-  - Response:
-    ![](https://pic.arctanp.top/PicGo/20250923153803.png)
-
-- Check if manifest exists
-  通过 tag 或 digest 验证 manifest 是否存在。
-
-  仅返回头信息（无正文）。适用于：
-
-  - 检查特定镜像版本是否存在
-  - 在下载或删除前确定清单的摘要或大小
-  此接口需要具有拉取权限的身份验证。
-
-  ```api
-  HEAD /v2/{name}/manifests/{reference}
-  ```
-
-  - Requests:
-    ![](https://pic.arctanp.top/PicGo/20250923154038.png)
-
-  - Response:
-    ![image-20250923154100097](C:\Users\tanpi\AppData\Roaming\Typora\typora-user-images\image-20250923154100097.png)
-
-- Delete image manifest
-  通过摘要从存储库中删除映像清单，仅可删除未标记或未被引用的清单。若清单仍被标签或其他映像引用，注册表将返回403禁止访问状态码。
-  
-  ```api
-  DELETE /v2/{name}/manifests/{reference}
-  ```
-  
-  - Request:
-    ![](https://pic.arctanp.top/PicGo/20250923154332.png)
-  
-  - Response:![](https://pic.arctanp.top/PicGo/20250923154411.png)
-
-### Blob
-
-- Initiate blob upload or attempt cross-repository blob mount
-
-  为存储库中的 blob（layer 或 config）启动上传会话。这是上传 blob 的第一步。该操作返回一个位置URL，用户可通过 PATCH（分块上传）或 PUT（整体上传）方式将块对象上传至该位置。
-
-  客户端也可尝试挂载其他存储库中的 blob（需具备读取权限），通过添加 mount 和 from 查询参数实现。
-
-  若挂载成功，注册表将返回 201 Created 状态码，blob 将被复用而无需重新上传。
-
-  若挂载失败，上传将按常规流程进行并返回 202 Accepted 状态码。
-
-  必须使用具有目标存储库推送权限的凭据进行身份验证。
-
-  ```api
-  POST /v2/{name}/blobs/uploads/
-  ```
-
-  - Request:
-    ![](https://pic.arctanp.top/PicGo/20250923155044.png)
-
-  - Response:
-    ![](https://pic.arctanp.top/PicGo/20250923155121.png)
-
-- Check existence of blob
-
-  ```api
-  HEAD /v2/{name}/blobs/{digest}
-  ```
-
-  检查 blob 是否已经存在
-
-  - Request:
-
-    ![](https://pic.arctanp.top/PicGo/20250923155456.png)
-
-  - Response:
-    ![image-20250923155540424](C:\Users\tanpi\AppData\Roaming\Typora\typora-user-images\image-20250923155540424.png)
-
-- Retrieve blob
-
-  ```api
-  GET /v2/{name}/blobs/{digest}
-  ```
-
-  - Request:
-    ![](https://pic.arctanp.top/PicGo/20250923160743.png)
-  - Responses:
-    ![](https://pic.arctanp.top/PicGo/20250923160728.png)
-
-- Get blob upload status
-
-  ```api
-  GET /ve/{name}/blobs/uploads/{uuid}
-  ```
-
-  检索正在进行的 blob 上传的当前状态。
-
-  此功能适用于：恢复中断的上传；确定当前已接收的字节数；在分块上传中从正确偏移量重试；响应包含 Range 标头（指示当前接收的字节范围）和用于识别会话的 Docker-Upload-UUID。
-
-  - Request:
-
-    ![](https://pic.arctanp.top/PicGo/20250923161104.png)
-
-  - Responses:
-    ![](https://pic.arctanp.top/PicGo/20250923162739.png)
-
-- Complete blob upload
-
-  ```api
-  PUT /v2/{name}/blobs/uploads/{uuid}
-  ```
-
-  此请求必须包含摘要查询参数，并可选地包含最后一个数据块。当存储注册表收到此请求时，它会验证摘要并存储 blob。
-
-  此端点支持：整体上传（在此请求中上传整个 blob）或完成分块上传（最后一个数据块加摘要）
-
-  - Request:
-    ![](https://pic.arctanp.top/PicGo/20250923162651.png)
-  - Responses:
-    ![](https://pic.arctanp.top/PicGo/20250923162721.png)
-
-- Upload blob chunk
-
-  ```api
-  PATCH /v2/{name}/blobs/uploads/{uuid}
-  ```
-
-  将块状数据分段上传至活跃的上传会话。
-
-  此方法适用于分段上传，尤其适用于大型块状数据或恢复中断上传的情境。
-
-  客户端通过PATCH请求发送二进制数据，可选添加Content-Range头部。
-
-  每当分块被接受后，注册表将返回202 Accepted响应，包含：
-
-  Range：当前存储的字节范围
-  Docker-Upload-UUID：上传会话标识符
-  Location：继续上传或通过PUT完成上传的URL
-
-  - Request:
-    ![](https://pic.arctanp.top/PicGo/20250923165640.png)
-  - Response:
-    ![](https://pic.arctanp.top/PicGo/20250923165722.png)
-
-- Cancel blob upload
-
-  ```api
-  DELETE /v2/{name}/blobs/uploads/{uuid}
-  ```
-
-  取消正在进行的 blob 上传会话。
-
-  此操作将丢弃已上传的所有数据并使上传会话失效。
-
-  适用场景：
-
-  上传失败或中途中止时
-  客户端需要清理未使用的上传会话时
-  取消后，UUID 将失效，必须重新发出 POST 请求才能重启上传。
-
-  - Request:
-    ![](https://pic.arctanp.top/PicGo/20250923170532.png)
-  - Response:
-    ![](https://pic.arctanp.top/PicGo/20250923170551.png)
+## 📚 支持的错误码
+
+| 错误码 | HTTP 状态 | 描述 |
+|--------|-----------|------|
+| `BLOB_UNKNOWN` | 404 | Blob 不存在 |
+| `MANIFEST_UNKNOWN` | 404 | Manifest 不存在 |
+| `BLOB_UPLOAD_UNKNOWN` | 404 | 上传会话不存在 |
+| `DIGEST_INVALID` | 400 | 摘要格式无效 |
+| `MANIFEST_INVALID` | 400 | Manifest 格式无效 |
+| `RANGE_INVALID` | 416 | Content-Range 无效 |
+| `UNSUPPORTED` | 400 | 操作不支持 |
+
+## 🔍 存储结构说明
+
+### Blob 存储
+- 路径：`blobs/sha256/{前两位}/{完整摘要}`
+- 示例：`blobs/sha256/ab/abcdef123...`
+- 特点：全局去重，跨仓库共享
+
+### Manifest 存储
+- 内容文件：`repositories/{name}/_manifests/revisions/sha256/{hash}`
+- 标签链接：`repositories/{name}/_manifests/tags/{tag}/current/link`
+- 临时上传：`repositories/{name}/_uploads/{uuid}/`
+
+## 许可证
+
+MIT License
