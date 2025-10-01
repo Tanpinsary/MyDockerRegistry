@@ -64,3 +64,86 @@ func NewError(code ErrorCode, message string, detail interface{}) RegistryError 
 		Detail:  detail,
 	}
 }
+
+// Standard error constructors based on Docker Registry HTTP API V2 specification
+
+// NewBlobUnknownError creates a 404 error for unknown blob
+func NewBlobUnknownError(digest string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeBlobUnknown,
+		Message: "blob unknown to registry",
+		Detail:  map[string]string{"digest": digest},
+	}
+}
+
+// NewManifestUnknownError creates a 404 error for unknown manifest
+func NewManifestUnknownError(name, reference string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeManifestUnknown,
+		Message: "manifest unknown",
+		Detail:  map[string]string{"name": name, "tag": reference},
+	}
+}
+
+// NewNameUnknownError creates a 404 error for unknown repository
+func NewNameUnknownError(name string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeNameUnknown,
+		Message: "repository name not known to registry",
+		Detail:  map[string]string{"name": name},
+	}
+}
+
+// NewBlobUploadUnknownError creates a 404 error for unknown upload session
+func NewBlobUploadUnknownError(uuid string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeBlobUploadUnknown,
+		Message: "blob upload unknown to registry",
+		Detail:  map[string]string{"uuid": uuid},
+	}
+}
+
+// NewNameInvalidError creates a 400 error for invalid name or reference
+func NewNameInvalidError(name string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeNameInvalid,
+		Message: "invalid repository name",
+		Detail:  map[string]string{"name": name},
+	}
+}
+
+// NewManifestInvalidError creates a 400 error for invalid manifest
+func NewManifestInvalidError(reason string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeManifestInvalid,
+		Message: "manifest invalid",
+		Detail:  map[string]string{"reason": reason},
+	}
+}
+
+// NewDigestInvalidError creates a 400 error for invalid digest
+func NewDigestInvalidError(digest string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeDigestInvalid,
+		Message: "provided digest did not match uploaded content",
+		Detail:  map[string]string{"digest": digest},
+	}
+}
+
+// NewRangeInvalidError creates a 400 error for invalid range
+func NewRangeInvalidError(rangeHeader string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeRangeInvalid,
+		Message: "invalid content range",
+		Detail:  map[string]string{"range": rangeHeader},
+	}
+}
+
+// NewBlobUploadInvalidError creates a 400 error for invalid upload parameters
+func NewBlobUploadInvalidError(reason string) RegistryError {
+	return RegistryError{
+		Code:    ErrorCodeBlobUploadInvalid,
+		Message: "blob upload invalid",
+		Detail:  map[string]string{"reason": reason},
+	}
+}

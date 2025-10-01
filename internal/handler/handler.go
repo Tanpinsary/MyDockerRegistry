@@ -112,9 +112,16 @@ func (h *RegistryHandler) getManifest(w http.ResponseWriter, r *http.Request, na
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeManifestUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+				// 404 Manifest not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewManifestUnknownError(name, reference))
+			case types.ErrorCodeNameUnknown:
+				// 404 Repository not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewNameUnknownError(name))
+			case types.ErrorCodeNameInvalid:
+				// 400 Invalid name or reference
+				types.WriteErrorResponse(w, http.StatusBadRequest, types.NewNameInvalidError(name))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusBadRequest, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -138,8 +145,8 @@ func (h *RegistryHandler) putManifest(w http.ResponseWriter, r *http.Request, na
 	// 读取请求体
 	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.writeErrorResponse(w, http.StatusBadRequest,
-			types.NewError(types.ErrorCodeManifestInvalid, "Failed to read manifest", err.Error()))
+		types.WriteErrorResponse(w, http.StatusBadRequest,
+			types.NewManifestInvalidError("Failed to read manifest"))
 		return
 	}
 	defer r.Body.Close()
@@ -154,14 +161,14 @@ func (h *RegistryHandler) putManifest(w http.ResponseWriter, r *http.Request, na
 	if err != nil {
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
-			case types.ErrorCodeBlobUnknown:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
-			case types.ErrorCodeDigestInvalid:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
-			case types.ErrorCodeManifestInvalid:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+			case types.ErrorCodeNameUnknown:
+				// 404 Repository not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewNameUnknownError(name))
+			case types.ErrorCodeNameInvalid, types.ErrorCodeManifestInvalid:
+				// 400 Invalid name, reference, or manifest
+				types.WriteErrorResponse(w, http.StatusBadRequest, regErr)
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusBadRequest, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -187,9 +194,10 @@ func (h *RegistryHandler) headManifest(w http.ResponseWriter, r *http.Request, n
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeManifestUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+				// 404 Manifest not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewManifestUnknownError(name, reference))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -215,10 +223,11 @@ func (h *RegistryHandler) deleteManifest(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
-			case types.ErrorCodeManifestUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+			case types.ErrorCodeManifestUnknown, types.ErrorCodeNameUnknown:
+				// 404 Manifest or repository not found
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -261,11 +270,10 @@ func (h *RegistryHandler) headBlob(w http.ResponseWriter, r *http.Request, name,
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeBlobUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
-			case types.ErrorCodeDigestInvalid:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				// 404 Blob not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewBlobUnknownError(digest))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -291,11 +299,10 @@ func (h *RegistryHandler) getBlob(w http.ResponseWriter, r *http.Request, name, 
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeBlobUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
-			case types.ErrorCodeDigestInvalid:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				// 404 Blob not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewBlobUnknownError(digest))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -330,7 +337,17 @@ func (h *RegistryHandler) InitiateBlobUploadHandler(w http.ResponseWriter, r *ht
 
 	response, err := h.storage.InitiateBlobUpload(params)
 	if err != nil {
-		h.writeErrorResponse(w, http.StatusInternalServerError, err)
+		if regErr, ok := err.(types.RegistryError); ok {
+			switch regErr.Code {
+			case types.ErrorCodeNameUnknown:
+				// 404 Repository not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewNameUnknownError(name))
+			default:
+				h.writeErrorResponse(w, http.StatusInternalServerError, regErr)
+			}
+		} else {
+			h.writeErrorResponse(w, http.StatusInternalServerError, err)
+		}
 		return
 	}
 
@@ -385,9 +402,10 @@ func (h *RegistryHandler) getBlobUploadStatus(w http.ResponseWriter, r *http.Req
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeBlobUploadUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+				// 404 Upload session not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewBlobUploadUnknownError(uuid))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -407,23 +425,23 @@ func (h *RegistryHandler) uploadBlobChunk(w http.ResponseWriter, r *http.Request
 	// 读取 Content-Range 头
 	contentRange := r.Header.Get("Content-Range")
 	if contentRange == "" {
-		h.writeErrorResponse(w, http.StatusBadRequest,
-			types.NewError(types.ErrorCodeRangeInvalid, "Content-Range header required", nil))
+		types.WriteErrorResponse(w, http.StatusBadRequest,
+			types.NewRangeInvalidError("Content-Range header required"))
 		return
 	}
 
 	rangeFrom, rangeTo, err := parseContentRange(contentRange)
 	if err != nil {
-		h.writeErrorResponse(w, http.StatusBadRequest,
-			types.NewError(types.ErrorCodeRangeInvalid, "Invalid Content-Range", err.Error()))
+		types.WriteErrorResponse(w, http.StatusBadRequest,
+			types.NewRangeInvalidError(contentRange))
 		return
 	}
 
 	// 读取请求体
 	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.writeErrorResponse(w, http.StatusBadRequest,
-			types.NewError(types.ErrorCodeBlobUploadInvalid, "Failed to read chunk data", err.Error()))
+		types.WriteErrorResponse(w, http.StatusBadRequest,
+			types.NewBlobUploadInvalidError("Failed to read chunk data"))
 		return
 	}
 	defer r.Body.Close()
@@ -441,11 +459,13 @@ func (h *RegistryHandler) uploadBlobChunk(w http.ResponseWriter, r *http.Request
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeBlobUploadUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+				// 404 Upload session not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewBlobUploadUnknownError(uuid))
 			case types.ErrorCodeRangeInvalid:
-				h.writeErrorResponse(w, http.StatusRequestedRangeNotSatisfiable, err)
+				// 400 Malformed content or range
+				types.WriteErrorResponse(w, http.StatusBadRequest, regErr)
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusBadRequest, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -465,8 +485,8 @@ func (h *RegistryHandler) completeBlobUpload(w http.ResponseWriter, r *http.Requ
 	// 从查询参数获取 digest
 	digest := r.URL.Query().Get("digest")
 	if digest == "" {
-		h.writeErrorResponse(w, http.StatusBadRequest,
-			types.NewError(types.ErrorCodeDigestInvalid, "digest parameter required", nil))
+		types.WriteErrorResponse(w, http.StatusBadRequest,
+			types.NewDigestInvalidError("digest parameter required"))
 		return
 	}
 
@@ -481,11 +501,13 @@ func (h *RegistryHandler) completeBlobUpload(w http.ResponseWriter, r *http.Requ
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeBlobUploadUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+				// 404 Upload session not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewBlobUploadUnknownError(uuid))
 			case types.ErrorCodeDigestInvalid:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				// 400 Invalid digest or missing parameters
+				types.WriteErrorResponse(w, http.StatusBadRequest, types.NewDigestInvalidError(digest))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusBadRequest, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
@@ -511,9 +533,10 @@ func (h *RegistryHandler) cancelBlobUpload(w http.ResponseWriter, r *http.Reques
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
 			case types.ErrorCodeBlobUploadUnknown:
-				h.writeErrorResponse(w, http.StatusNotFound, err)
+				// 404 Upload session not found
+				types.WriteErrorResponse(w, http.StatusNotFound, types.NewBlobUploadUnknownError(uuid))
 			default:
-				h.writeErrorResponse(w, http.StatusBadRequest, err)
+				types.WriteErrorResponse(w, http.StatusNotFound, regErr)
 			}
 		} else {
 			h.writeErrorResponse(w, http.StatusInternalServerError, err)
