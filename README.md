@@ -6,7 +6,7 @@ BYRTeam 2025 考核题 Docker It Yourself 实现
 
 ## 使用时间
 
-https://wakatime.com/share/badges/projects?q=my_docker_registry
+https://wakatime.com/badge/user/a0a1a76d-0ee4-4a97-8f98-32faeaba5485/project/fa2900c8-1179-4984-84e6-f87a8b623dba.svg
 
 前期花了几个小时读文档写文档，大概理清思路之后开始设计接口，把文档喂给 ai 接口写的和文档要求差别好大，于是接口大部分是自己设计的，剩下的存储层和处理层几乎都是 vibe coding（），wakatime 记录的主要是项目开始到写现在 README 用的时间。
 由于是第一次接触这种偏向于对着文档造轮子的项目，还是挺痛苦的（）。前期瞎几把整理的文档贴在 [这里](/tanp's_docs.md) 了， yysy 感觉还不如直接对着官方文档看（）。
