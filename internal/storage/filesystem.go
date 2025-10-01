@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"my_docker_registry/internal/types"
@@ -65,8 +64,9 @@ func (d *fileSystemDriver) resolveReference(repoName, reference string) (string,
 }
 
 // calculateDigest 计算数据的 sha256 摘要。
+// calculateDigest 已移至 types.CalculateDigest
 func calculateDigest(content []byte) string {
-	return fmt.Sprintf("sha256:%x", sha256.Sum256(content))
+	return types.CalculateDigest(content)
 }
 
 // blobDataPath 根据摘要构建 blob 数据文件的路径。
@@ -96,7 +96,7 @@ func (d *fileSystemDriver) blobUploadPath(repoName, uuid string) string {
 
 // --- Manifest API ---
 
-func (d *fileSystemDriver) GetManifest(params types.GetManifestParams) (*types.Manifest, error) {
+func (d *fileSystemDriver) GetManifest(params types.GetManifestParams) (*types.ManifestResponse, error) {
 	// 1. 将 tag 处理为 digest
 	digest, err := d.resolveReference(params.RepositoryName, params.Reference)
 	if err != nil {
@@ -113,13 +113,32 @@ func (d *fileSystemDriver) GetManifest(params types.GetManifestParams) (*types.M
 		return nil, err
 	}
 
-	// 3. 反序列化
-	var manifest types.Manifest
-	if err := json.Unmarshal(content, &manifest); err != nil {
-		return nil, types.NewError(types.ErrorCodeManifestInvalid, "failed to parse manifest", err.Error())
+	// 3. 检测媒体类型
+	mediaType := types.DetectManifestMediaType(content)
+
+	// 4. 创建响应对象
+	response := &types.ManifestResponse{
+		Content:   content,
+		MediaType: mediaType,
 	}
 
-	return &manifest, nil
+	// 5. 根据类型解析内容
+	switch mediaType {
+	case types.ManifestV2MediaType:
+		var manifest types.Manifest
+		if err := json.Unmarshal(content, &manifest); err != nil {
+			return nil, types.NewError(types.ErrorCodeManifestInvalid, "failed to parse manifest", err.Error())
+		}
+		response.Manifest = &manifest
+	case types.ManifestListV2MediaType:
+		var manifestList types.ManifestList
+		if err := json.Unmarshal(content, &manifestList); err != nil {
+			return nil, types.NewError(types.ErrorCodeManifestInvalid, "failed to parse manifest list", err.Error())
+		}
+		response.ManifestList = &manifestList
+	}
+
+	return response, nil
 }
 
 func (d *fileSystemDriver) PutManifest(params types.PutManifestParams) (*types.ManifestData, error) {
@@ -188,8 +207,8 @@ func (d *fileSystemDriver) ManifestExists(params types.GetManifestParams) (*type
 	// 2. 获取 manifest 内容文件的路径
 	manifestPath := d.manifestPath(params.RepositoryName, digest) // <-- 使用 digest，而不是 reference
 
-	// 3. 使用 os.Stat 获取文件元信息，而不是读取整个文件
-	info, err := os.Stat(manifestPath)
+	// 3. 读取文件内容以检测媒体类型
+	content, err := os.ReadFile(manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// 文件不存在，返回标准的 manifest unknown 错误
@@ -198,12 +217,16 @@ func (d *fileSystemDriver) ManifestExists(params types.GetManifestParams) (*type
 		return nil, err // 其他文件系统错误
 	}
 
-	// 4. 构建并返回 ManifestData
+	// 4. 检测媒体类型
+	mediaType := types.DetectManifestMediaType(content)
+
+	// 5. 构建并返回 ManifestData
 	manifestData := &types.ManifestData{
 		Digest: digest,
 		// Location 通常由 handler 构建，但在这里返回也很方便
 		Location:      fmt.Sprintf("/v2/%s/manifests/%s", params.RepositoryName, digest),
-		ContentLength: int(info.Size()), // 从文件信息中获取大小
+		ContentLength: len(content), // 内容长度
+		MediaType:     mediaType,    // 检测到的媒体类型
 	}
 
 	return manifestData, nil

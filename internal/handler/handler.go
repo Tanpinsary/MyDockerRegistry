@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -107,7 +106,7 @@ func (h *RegistryHandler) getManifest(w http.ResponseWriter, r *http.Request, na
 		Reference:      reference,
 	}
 
-	manifest, err := h.storage.GetManifest(params)
+	manifestResponse, err := h.storage.GetManifest(params)
 	if err != nil {
 		if regErr, ok := err.(types.RegistryError); ok {
 			switch regErr.Code {
@@ -129,15 +128,22 @@ func (h *RegistryHandler) getManifest(w http.ResponseWriter, r *http.Request, na
 		return
 	}
 
-	// 设置响应头
-	w.Header().Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
-	w.Header().Set("Docker-Content-Digest", manifest.Config.Digest)
+	// 设置响应头 - 使用检测到的 Content-Type
+	w.Header().Set("Content-Type", manifestResponse.MediaType)
+
+	// 根据类型设置不同的 digest 头
+	var digest string
+	if manifestResponse.Manifest != nil {
+		digest = manifestResponse.Manifest.Config.Digest
+	} else if manifestResponse.ManifestList != nil {
+		// 对于 manifest list，使用内容的 SHA256 digest
+		digest = types.CalculateDigest(manifestResponse.Content)
+	}
+	w.Header().Set("Docker-Content-Digest", digest)
 	w.WriteHeader(http.StatusOK)
 
-	// 返回 manifest JSON
-	if err := json.NewEncoder(w).Encode(manifest); err != nil {
-		log.Printf("Failed to encode manifest: %v", err)
-	}
+	// 直接返回原始内容以保持完整性
+	w.Write(manifestResponse.Content)
 }
 
 // putManifest 处理 PUT /v2/{name}/manifests/{reference}
@@ -205,8 +211,12 @@ func (h *RegistryHandler) headManifest(w http.ResponseWriter, r *http.Request, n
 		return
 	}
 
-	// 设置响应头
-	w.Header().Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
+	// 设置响应头 - 使用存储层返回的 MediaType
+	contentType := manifestData.MediaType
+	if contentType == "" {
+		contentType = types.ManifestV2MediaType // 默认值
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Docker-Content-Digest", manifestData.Digest)
 	w.Header().Set("Content-Length", strconv.Itoa(manifestData.ContentLength))
 	w.WriteHeader(http.StatusOK)
