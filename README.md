@@ -4,7 +4,14 @@ BYRTeam 2025 考核题 Docker It Yourself 实现
 
 一个用 Go 语言实现的轻量级 Docker Registry HTTP API V2 服务器，支持完整的 manifest 和 blob 管理功能。
 
-## 🚀 功能特性
+## 使用时间
+
+https://wakatime.com/share/badges/projects?q=my_docker_registry
+
+前期花了几个小时读文档写文档，大概理清思路之后开始设计接口，把文档喂给 ai 接口写的和文档要求差别好大，于是接口大部分是自己设计的，剩下的存储层和处理层几乎都是 vibe coding（），wakatime 记录的主要是项目开始到写现在 README 用的时间。
+由于是第一次接触这种偏向于对着文档造轮子的项目，还是挺痛苦的（）。前期瞎几把整理的文档贴在 [这里](/tanp's_docs.md) 了， yysy 感觉还不如直接对着官方文档看（）。
+
+## 功能
 
 ### 核心 API 支持
 - **Manifest 管理** - 支持获取、上传、检查和删除
@@ -100,35 +107,150 @@ go build ./cmd/registry
 
 服务器将在 `http://localhost:5000` 启动，数据将存储在 `./registry_data` 目录中。
 
+## 测试 API
+
+### 基本功能测试
+
+**1. 检查 API 版本**
+```bash
+curl -i http://localhost:5000/v2/
+```
+
+**2. 初始化 blob 上传**
+```bash
+curl -i -X POST http://localhost:5000/v2/test/blobs/uploads/
+```
+
+### 错误响应测试
+
+**测试 404 - Blob 不存在**
+```bash
+curl -i http://localhost:5000/v2/test/blobs/sha256:0000000000000000000000000000000000000000000000000000000000000000
+```
+
+**测试 404 - 上传会话不存在**
+```bash  
+curl -i http://localhost:5000/v2/test/blobs/uploads/invalid-uuid
+```
+
+**测试 400 - 缺少 Content-Range**
+```bash
+curl -i -X PATCH http://localhost:5000/v2/test/blobs/uploads/{uuid} -d "data"
+```
+
+**测试 400 - 缺少 digest 参数**
+```bash
+curl -i -X PUT http://localhost:5000/v2/test/blobs/uploads/{uuid}
+```
+
+所有错误响应都将返回符合 Docker Registry API 标准的 JSON 格式错误信息。
+
 ### 错误响应格式
 
-所有错误都遵循 Docker Registry API 标准格式：
+所有错误都遵循 Docker Registry HTTP API V2 标准格式：
 
 ```json
 {
   "errors": [
     {
       "code": "BLOB_UNKNOWN",
-      "message": "blob unknown",
+      "message": "blob unknown to registry",
       "detail": {
-        "digest": "sha256:abc123"
+        "digest": "sha256:abc123..."
       }
     }
   ]
 }
 ```
 
-## 📚 支持的错误码
+#### 常见错误响应示例
 
-| 错误码 | HTTP 状态 | 描述 |
-|--------|-----------|------|
-| `BLOB_UNKNOWN` | 404 | Blob 不存在 |
-| `MANIFEST_UNKNOWN` | 404 | Manifest 不存在 |
-| `BLOB_UPLOAD_UNKNOWN` | 404 | 上传会话不存在 |
-| `DIGEST_INVALID` | 400 | 摘要格式无效 |
-| `MANIFEST_INVALID` | 400 | Manifest 格式无效 |
-| `RANGE_INVALID` | 416 | Content-Range 无效 |
-| `UNSUPPORTED` | 400 | 操作不支持 |
+**404 - Blob 不存在**
+```json
+{
+  "errors": [
+    {
+      "code": "BLOB_UNKNOWN",
+      "message": "blob unknown to registry",
+      "detail": {"digest": "sha256:0000..."}
+    }
+  ]
+}
+```
+
+**404 - 上传会话不存在**
+```json
+{
+  "errors": [
+    {
+      "code": "BLOB_UPLOAD_UNKNOWN", 
+      "message": "blob upload unknown to registry",
+      "detail": {"uuid": "invalid-uuid"}
+    }
+  ]
+}
+```
+
+**400 - 缺少必需参数**
+```json
+{
+  "errors": [
+    {
+      "code": "DIGEST_INVALID",
+      "message": "provided digest did not match uploaded content",
+      "detail": {"digest": "digest parameter required"}
+    }
+  ]
+}
+```
+
+**400 - 无效的 Content-Range**
+```json
+{
+  "errors": [
+    {
+      "code": "RANGE_INVALID",
+      "message": "invalid content range", 
+      "detail": {"range": "Content-Range header required"}
+    }
+  ]
+}
+```
+
+## 📚 API 响应码规范
+
+### Manifest API 响应码
+| API | 成功响应 | 错误响应 |
+|-----|----------|----------|
+| **GET Manifest** | 200 获取成功 | 400 无效名称或引用<br>404 Repository 或 manifest 不存在 |
+| **PUT Manifest** | 201 创建成功 | 400 无效名称、引用或 manifest<br>404 Repository 不存在 |
+| **HEAD Manifest** | 200 Manifest 存在 | 404 Manifest 不存在 |
+| **DELETE Manifest** | 202 删除成功 | 404 Manifest 或 repository 不存在 |
+
+### Blob API 响应码
+| API | 成功响应 | 错误响应 |
+|-----|----------|----------|
+| **HEAD Blob** | 200 Blob 存在 | 404 Blob 不存在 |
+| **GET Blob** | 200 内容返回 | 404 Blob 不存在 |
+| **POST Upload Init** | 201 挂载成功<br>202 上传初始化成功 | 404 Repository 不存在 |
+| **GET Upload Status** | 204 上传进行中 | 404 上传会话不存在 |
+| **PATCH Upload Chunk** | 202 Chunk 接受 | 400 格式错误或范围无效<br>404 上传会话不存在 |
+| **PUT Complete Upload** | 201 上传完成 | 400 无效摘要或缺少参数<br>404 上传会话不存在 |
+| **DELETE Cancel Upload** | 204 会话取消成功 | 404 上传会话不存在 |
+
+## 🚫 标准错误码
+
+| 错误码 | HTTP 状态 | 消息 | 使用场景 |
+|--------|-----------|------|----------|
+| `BLOB_UNKNOWN` | 404 | blob unknown to registry | Blob 不存在 |
+| `MANIFEST_UNKNOWN` | 404 | manifest unknown | Manifest 不存在 |
+| `NAME_UNKNOWN` | 404 | repository name not known to registry | Repository 不存在 |
+| `BLOB_UPLOAD_UNKNOWN` | 404 | blob upload unknown to registry | 上传会话不存在 |
+| `NAME_INVALID` | 400 | invalid repository name | 无效的仓库名称 |
+| `MANIFEST_INVALID` | 400 | manifest invalid | 无效的 manifest 格式 |
+| `DIGEST_INVALID` | 400 | provided digest did not match uploaded content | 摘要不匹配 |
+| `RANGE_INVALID` | 400 | invalid content range | Content-Range 头无效 |
+| `BLOB_UPLOAD_INVALID` | 400 | blob upload invalid | 无效的上传参数 |
 
 ## 🔍 存储结构说明
 
