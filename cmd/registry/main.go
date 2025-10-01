@@ -4,41 +4,45 @@ import (
 	"log"
 	"net/http"
 
+	"my_docker_registry/internal/handler"
+	"my_docker_registry/internal/storage"
+
 	"github.com/gorilla/mux"
 )
 
 func main() {
+	// 初始化存储层
+	storageDriver, err := storage.NewFileSystemDriver("./registry_data")
+	if err != nil {
+		log.Fatalf("Failed to initialize storage driver: %v", err)
+	}
+
+	// 初始化处理层
+	registryHandler := handler.NewRegistryHandler(storageDriver)
+
+	// 创建路由器
 	r := mux.NewRouter()
 
-	notImplementedHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		log.Printf("Received request for unimplemented endpoint: %s %s, Vars: %v", r.Method, r.URL.Path, vars)
-		http.Error(w, "API endpoint not implemented yet.", http.StatusNotImplemented)
-	})
-
 	// 基础 API 版本检查
-	r.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Docker-Distribution-API-Version", "registry/2")
-		w.WriteHeader(http.StatusOK)
-		log.Println("Responded to /v2/ API version check")
-	}).Methods("GET")
+	r.HandleFunc("/v2/", registryHandler.APIVersionHandler).Methods("GET")
 
 	// Manifests 相关路由
 	// GET, PUT, HEAD, DELETE /v2/{name}/manifests/{reference}
-	r.HandleFunc("/v2/{name:.+}/manifests/{reference}", notImplementedHandler).Methods("GET", "PUT", "HEAD", "DELETE")
+	r.HandleFunc("/v2/{name:.+}/manifests/{reference}", registryHandler.ManifestHandler).Methods("GET", "PUT", "HEAD", "DELETE")
 
 	// Blobs 相关路由
 	// HEAD, GET /v2/{name}/blobs/{digest}
-	r.HandleFunc("/v2/{name:.+}/blobs/{digest}", notImplementedHandler).Methods("HEAD", "GET")
+	r.HandleFunc("/v2/{name:.+}/blobs/{digest}", registryHandler.BlobHandler).Methods("HEAD", "GET")
 
 	// POST /v2/{name}/blobs/uploads/
-	r.HandleFunc("/v2/{name:.+}/blobs/uploads/", notImplementedHandler).Methods("POST")
+	r.HandleFunc("/v2/{name:.+}/blobs/uploads/", registryHandler.InitiateBlobUploadHandler).Methods("POST")
 
 	// GET, PATCH, PUT, DELETE /v2/{name}/blobs/uploads/{uuid}
-	r.HandleFunc("/v2/{name:.+}/blobs/uploads/{uuid}", notImplementedHandler).Methods("GET", "PATCH", "PUT", "DELETE")
+	r.HandleFunc("/v2/{name:.+}/blobs/uploads/{uuid}", registryHandler.BlobUploadHandler).Methods("GET", "PATCH", "PUT", "DELETE")
 
 	port := "5000"
 	log.Printf("Starting Docker Registry backend on port %s...", port)
+	log.Printf("Registry data will be stored in: ./registry_data")
 
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
