@@ -16,7 +16,7 @@ type StorageDriver interface {
 	BlobExists(params types.GetBlobParams) (*types.BlobStatus, error)
 	RetrieveBlob(params types.GetBlobParams) (*types.BlobStatus, error)
 	GetBlobUploadStatus(params types.GetBlobParams) (*types.BlobUploadStatus, error)
-	CompleteBlobUpload(params types.GetBlobParams) (*types.CompleteBlobUploadResponse, error)
+	CompleteBlobUpload(params types.CompleteBlobUploadParams) (*types.CompleteBlobUploadResponse, error)
 	UploadBlobChunk(params types.UploadBlobChunkParams) (*types.UploadBlobChunkResponse, error)
 	CancelBlobUpload(params types.GetBlobParams) (int, error)
 }

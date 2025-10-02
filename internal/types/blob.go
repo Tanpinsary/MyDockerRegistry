@@ -1,5 +1,7 @@
 package types
 
+import "io"
+
 // 查询 Blob 通过 name 和 reference
 type GetBlobParams struct {
 	RepositoryName string
@@ -13,6 +15,7 @@ type BlobStatus struct {
 	ContentLength int
 	Digest        string
 	ContentType   string
+	Reader        io.ReadCloser // 用于 GET 请求时输出文件内容
 }
 
 // GetBlobUploadStatus 返回参数
@@ -20,6 +23,14 @@ type BlobUploadStatus struct {
 	Range    string
 	UUID     string
 	Location string
+}
+
+// CompleteBlobUpload 接受参数
+type CompleteBlobUploadParams struct {
+	RepositoryName string
+	UUID           string
+	Digest         string
+	Data           []byte
 }
 
 // CompleteBlobUpload 返回参数

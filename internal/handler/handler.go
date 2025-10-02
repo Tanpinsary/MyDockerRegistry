@@ -326,8 +326,11 @@ func (h *RegistryHandler) getBlob(w http.ResponseWriter, r *http.Request, name, 
 	w.Header().Set("Docker-Content-Digest", status.Digest)
 	w.WriteHeader(http.StatusOK)
 
-	// 注意：这里我们只返回了头部信息，实际的文件内容需要从存储层读取并写入响应体
-	// 在真实实现中，需要添加文件流式传输逻辑
+	// 实际输出文件内容
+	if status.Reader != nil {
+		defer status.Reader.Close()
+		io.Copy(w, status.Reader)
+	}
 }
 
 // InitiateBlobUploadHandler 处理 POST /v2/{name}/blobs/uploads/
@@ -500,10 +503,18 @@ func (h *RegistryHandler) completeBlobUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	params := types.GetBlobParams{
+	// 读取请求体数据
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.writeErrorResponse(w, http.StatusBadRequest, err)
+		return
+	}
+
+	params := types.CompleteBlobUploadParams{
 		RepositoryName: name,
 		UUID:           uuid,
 		Digest:         digest,
+		Data:           body,
 	}
 
 	response, err := h.storage.CompleteBlobUpload(params)

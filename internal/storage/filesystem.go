@@ -362,11 +362,18 @@ func (d *fileSystemDriver) RetrieveBlob(params types.GetBlobParams) (*types.Blob
 		return nil, err
 	}
 
-	// 3. 构建并返回 BlobStatus
+	// 3. 打开文件用于读取
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. 构建并返回 BlobStatus
 	status := &types.BlobStatus{
 		Digest:        params.Digest,
 		ContentLength: int(info.Size()),
 		ContentType:   "application/octet-stream", // Blob 的标准 Content-Type
+		Reader:        file,                       // 文件 Reader
 	}
 
 	return status, nil
@@ -416,20 +423,33 @@ func (d *fileSystemDriver) GetBlobUploadStatus(params types.GetBlobParams) (*typ
 	return status, nil
 }
 
-func (d *fileSystemDriver) CompleteBlobUpload(params types.GetBlobParams) (*types.CompleteBlobUploadResponse, error) {
+func (d *fileSystemDriver) CompleteBlobUpload(params types.CompleteBlobUploadParams) (*types.CompleteBlobUploadResponse, error) {
 	// 1. 获取临时上传目录的路径
 	uploadPath := d.blobUploadPath(params.RepositoryName, params.UUID)
 	dataPath := filepath.Join(uploadPath, "data")
 
 	// 2. 检查上传会话是否存在
-	if _, err := os.Stat(dataPath); os.IsNotExist(err) {
+	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
 		return nil, types.NewError(types.ErrorCodeBlobUploadUnknown, "blob upload unknown", map[string]string{"uuid": params.UUID})
 	}
 
-	// 3. 读取临时文件内容并计算摘要
-	content, err := os.ReadFile(dataPath)
-	if err != nil {
-		return nil, err
+	// 3. 如果请求体有数据，将数据写入临时文件
+	if len(params.Data) > 0 {
+		if err := os.WriteFile(dataPath, params.Data, 0644); err != nil {
+			return nil, err
+		}
+	}
+
+	// 4. 读取或获取最终的文件内容并计算摘要
+	var content []byte
+	var err error
+	if len(params.Data) > 0 {
+		content = params.Data
+	} else {
+		content, err = os.ReadFile(dataPath)
+		if err != nil {
+			return nil, err
+		}
 	}
 	calculatedDigest := calculateDigest(content)
 
