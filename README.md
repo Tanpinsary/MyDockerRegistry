@@ -38,6 +38,60 @@ BYRTeam 2025 考核题 Docker It Yourself 报告
 
 首先完全没考虑并发问题。希望这点不计入考量（）；其次最大的缺点是 Vibe 有点多了，奈何本人水平有限……
 
+## 生产部署
+
+### Nginx 反向代理 + Cloudflare
+
+本项目包含完整的 Nginx 配置用于生产环境部署，支持 Cloudflare CDN 代理：
+
+- **域名**: test.arctanp.top
+- **服务器 IP**: 59.64.129.111
+- **Cloudflare 支持**: 自动检测代理模式并应用相应配置
+- **SSL 方案**: Cloudflare Universal SSL 或 Let's Encrypt
+
+#### Cloudflare DNS 配置
+
+```bash
+# 1. 运行配置指南 (显示详细步骤和实时检测)
+./nginx/cloudflare-setup.sh
+
+# 2. 在 Cloudflare 控制台添加 A 记录:
+# 类型: A
+# 名称: test
+# IPv4 地址: 59.64.129.111
+# 代理状态: 🟠 已代理 (推荐)
+```
+
+#### 快速部署
+
+```bash
+# Cloudflare 智能部署 (自动检测代理模式)
+sudo ./nginx/deploy-cloudflare.sh
+
+# 标准部署 (仅 DNS 模式)
+sudo ./nginx/deploy.sh
+
+# 手动部署
+sudo cp nginx/registry-cloudflare.conf /etc/nginx/sites-available/registry.conf
+sudo ln -s /etc/nginx/sites-available/registry.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+详细部署说明请查看 [nginx/DEPLOYMENT.md](nginx/DEPLOYMENT.md)
+
+#### 使用方法
+
+```bash
+# Docker 客户端配置
+docker login test.arctanp.top
+docker tag myimage:latest test.arctanp.top/myimage:latest
+docker push test.arctanp.top/myimage:latest
+
+# API 访问
+curl https://test.arctanp.top/v2/
+curl https://test.arctanp.top/v2/_catalog
+```
+
 ## 实现功能 （以下部分主要由 AI 总结生成）
 
 ### 核心 API 支持
