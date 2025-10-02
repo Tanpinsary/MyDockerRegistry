@@ -10,7 +10,7 @@ BYRTeam 2025 考核题 Docker It Yourself 报告
 
 ## 简要报告
 
-由于是第一次接触这种偏向于对着文档造轮子的项目，还是挺痛苦的。前期瞎几把整理的文档贴在 [这里](/tanp's_docs.md) 了， yysy 写的非常非常乱，感觉还不如直接对着官方文档看。
+由于是第一次接触这种偏向于对着文档造轮子的项目，还是挺痛苦的。前期瞎几把整理的文档贴在 [这里](/tanp's_docs.md) 了， yysy 写的非常非常乱，感觉还不如直接对着官方文档看。等到初步完工了才想起来可以用 APIFOX 做管理和测试，所以交了问卷又返工进一步做测试去了（）。
 
 前期花了几个小时读文档写文档，大概理清思路之后设计项目结构，然后花费大量时间设计接口，剩下的存储层和处理层的代码大部分为 Vibe Coding 主导 + 人工 Review。AI 生成代码使用 vsc 集成 copilot，模型为 Claude Sonnet 4 以及 Gemini 2.5 pro。
 
@@ -28,7 +28,7 @@ BYRTeam 2025 考核题 Docker It Yourself 报告
 
 花费时间最大的部分大概是第一步（types 设计和接口设计）。众所周知 Golang 是一门没有类和继承概念的静态编译型语言，意味者 struct 设计和品味的重要性。
 
-对于这个项目多达 11 个的 api，为了提高代码复用，本人设计时经常左脑搏击右脑，几个不同 api 可以实现复用的结构捋不清楚，加上我把文档喂给 AI 写的还和文档要求大相径庭，于是乎自己推翻重来对着官方文档和自己写的文档改了好几次，例如最后快全写完的时候才注意到 Content-Type 处理有问题。
+对于这个项目多达 11 个的 api，为了提高代码复用，本人设计时经常左脑搏击右脑，几个不同 api 可以实现复用的结构捋不清楚，加上我把文档喂给 AI 写的还和文档要求大相径庭，于是乎自己推翻重来对着官方文档和自己写的文档改了好几次。哎还是太菜了。
 
 ### step2 & step3
 
@@ -36,60 +36,15 @@ BYRTeam 2025 考核题 Docker It Yourself 报告
 
 ### 缺点
 
-首先完全没考虑并发问题。希望这点不计入考量（）；其次最大的缺点是 Vibe 有点多了，奈何本人水平有限……
+首先完全没考虑并发问题。希望这点不计入考量（）；其次最大的缺点是本人太菜 Vibe 有点多...
 
 ## 生产部署
 
-### Nginx 反向代理 + Cloudflare
-
-本项目包含完整的 Nginx 配置用于生产环境部署，支持 Cloudflare CDN 代理：
-
-- **域名**: test.arctanp.top
-- **服务器 IP**: 59.64.129.111
-- **Cloudflare 支持**: 自动检测代理模式并应用相应配置
-- **SSL 方案**: Cloudflare Universal SSL 或 Let's Encrypt
-
-#### Cloudflare DNS 配置
+nginx + cloudflare 部署到了 test.arctanp.top 上。
 
 ```bash
-# 1. 运行配置指南 (显示详细步骤和实时检测)
-./nginx/cloudflare-setup.sh
-
-# 2. 在 Cloudflare 控制台添加 A 记录:
-# 类型: A
-# 名称: test
-# IPv4 地址: 59.64.129.111
-# 代理状态: 🟠 已代理 (推荐)
-```
-
-#### 快速部署
-
-```bash
-# Cloudflare 智能部署 (自动检测代理模式)
-sudo ./nginx/deploy-cloudflare.sh
-
-# 标准部署 (仅 DNS 模式)
-sudo ./nginx/deploy.sh
-
-# 手动部署
-sudo cp nginx/registry-cloudflare.conf /etc/nginx/sites-available/registry.conf
-sudo ln -s /etc/nginx/sites-available/registry.conf /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-详细部署说明请查看 [nginx/DEPLOYMENT.md](nginx/DEPLOYMENT.md)
-
-#### 使用方法
-
-```bash
-# Docker 客户端配置
-docker login test.arctanp.top
-docker tag myimage:latest test.arctanp.top/myimage:latest
-docker push test.arctanp.top/myimage:latest
-
 # API 访问
 curl https://test.arctanp.top/v2/
-curl https://test.arctanp.top/v2/_catalog
 ```
 
 ## 实现功能 （以下部分主要由 AI 总结生成）
