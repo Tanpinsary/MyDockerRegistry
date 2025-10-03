@@ -4,13 +4,21 @@ BYRTeam 2025 考核题 Docker It Yourself 报告
 
 一个用 Go 语言实现的轻量级 Docker Registry HTTP API V2 服务器，支持完整的 manifest 和 blob 管理功能。
 
+项目采用分层架构设计：
+
+- Handler层：HTTP请求处理
+- Storage层：存储驱动接口和文件系统实现
+- Types层：数据结构和错误处理
+
 ## 使用时间
 
 [![wakatime](https://wakatime.com/badge/user/a0a1a76d-0ee4-4a97-8f98-32faeaba5485/project/fa2900c8-1179-4984-84e6-f87a8b623dba.svg)](https://wakatime.com/badge/user/a0a1a76d-0ee4-4a97-8f98-32faeaba5485/project/fa2900c8-1179-4984-84e6-f87a8b623dba)
 
 ## 简要报告
 
-由于是第一次接触这种偏向于对着文档造轮子的项目，还是挺痛苦的。前期瞎几把整理的文档贴在 [这里](/tanp's_docs.md) 了， yysy 写的非常非常乱，感觉还不如直接对着官方文档看。等到初步完工了才想起来可以用 APIFOX 做管理和测试，所以交了问卷又返工进一步做测试去了（）。
+由于是第一次接触这种偏向于对着文档造轮子的项目，还是挺痛苦的。前期瞎几把整理的文档贴在 [这里](/tanp's_docs.md) 了， yysy 写的非常非常乱，感觉还不如直接对着官方文档看。等到初步完工了才想起来可以用 APIFOX 做管理和测试，所以交了问卷又返工，这玩意真是比自己截图方便 998244353 倍啊。
+
+[APIFOX 文档](https://m3kc0i3ss7.apifox.cn/)
 
 前期花了几个小时读文档写文档，大概理清思路之后设计项目结构，然后花费大量时间设计接口，剩下的存储层和处理层的代码大部分为 Vibe Coding 主导 + 人工 Review。AI 生成代码使用 vsc 集成 copilot，模型为 Claude Sonnet 4 以及 Gemini 2.5 pro。
 

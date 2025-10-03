@@ -131,15 +131,9 @@ func (h *RegistryHandler) getManifest(w http.ResponseWriter, r *http.Request, na
 	// 设置响应头 - 使用检测到的 Content-Type
 	w.Header().Set("Content-Type", manifestResponse.MediaType)
 
-	// 根据类型设置不同的 digest 头
-	var digest string
-	if manifestResponse.Manifest != nil {
-		digest = manifestResponse.Manifest.Config.Digest
-	} else if manifestResponse.ManifestList != nil {
-		// 对于 manifest list，使用内容的 SHA256 digest
-		digest = types.CalculateDigest(manifestResponse.Content)
-	}
-	w.Header().Set("Docker-Content-Digest", digest)
+	// Docker-Content-Digest 应该是 manifest 内容本身的摘要，而不是 config 的摘要
+	manifestDigest := types.CalculateDigest(manifestResponse.Content)
+	w.Header().Set("Docker-Content-Digest", manifestDigest)
 	w.WriteHeader(http.StatusOK)
 
 	// 直接返回原始内容以保持完整性
