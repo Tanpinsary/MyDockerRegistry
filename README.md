@@ -48,11 +48,11 @@ BYRTeam 2025 考核题 Docker It Yourself 报告
 
 ## 生产部署
 
-nginx + cloudflare 部署到了 test.arctanp.top 上。
+图省事部署到了 [render](https://mydockerregistry.onrender.com) 上。
 
 ```bash
 # API 访问
-curl https://test.arctanp.top/v2/
+curl https://mydockerregistry.onrender.com/v2/
 ```
 
 ## 实现功能 （以下部分主要由 AI 总结生成）
